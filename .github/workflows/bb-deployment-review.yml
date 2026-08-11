@@ -1,0 +1,38 @@
+name: bb-deployment-review
+run-name: bb-deployment-review-${{ inputs.marker }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      marker:
+        description: Controlled non-secret run marker
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  approval-boundary:
+    name: approval-boundary
+    environment: bb-deployment-review-20260811
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BB_MARKER: ${{ inputs.marker }}
+      BB_ENV_SECRET: ${{ secrets.BB_DEPLOYMENT_REVIEW_CANARY }}
+    steps:
+      - name: Validate environment secret
+        shell: bash
+        run: |
+          ruby <<'RUBY'
+          require "digest"
+          require "json"
+
+          marker = ENV.fetch("BB_MARKER")
+          secret = ENV.fetch("BB_ENV_SECRET", "")
+          abort "marker drift" unless marker.match?(/A(?:origin|replacement)-[0-9a-f]{12}z/)
+          matched = !secret.empty? && Digest::SHA256.hexdigest(secret) == "f8d63f7f8d16e5d88bc0e38e4d07ceb4efd6155aaf46f1cf614cdf829bf15a70"
+          puts JSON.generate({ "marker" => marker, "secret_present" => !secret.empty?, "secret_match" => matched, "secret_value_output" => false })
+          abort "environment secret unavailable" unless matched
+          RUBY
